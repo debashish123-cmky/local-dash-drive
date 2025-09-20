@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
+import { collection, query, getDocs, orderBy, limit, where } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { 
   BarChart3, 
   Package, 
@@ -14,19 +16,19 @@ import {
   AlertCircle,
   DollarSign,
   MapPin,
-  Truck
+  Truck,
+  Loader2
 } from "lucide-react";
 
 const BusinessDashboard = () => {
-  const [selectedPeriod, setSelectedPeriod] = useState("today");
-
-  const recentOrders = [
-    { id: "#12847", customer: "John Smith", status: "in-transit", time: "2:34 PM", value: "$24.99", driver: "Mike Johnson" },
-    { id: "#12846", customer: "Sarah Wilson", status: "delivered", time: "2:15 PM", value: "$18.50", driver: "Emma Davis" },
-    { id: "#12845", customer: "David Brown", status: "preparing", time: "2:08 PM", value: "$31.25", driver: "Unassigned" },
-    { id: "#12844", customer: "Lisa Garcia", status: "in-transit", time: "1:55 PM", value: "$22.75", driver: "Tom Anderson" },
-    { id: "#12843", customer: "Robert Taylor", status: "delivered", time: "1:42 PM", value: "$19.99", driver: "Anna Lee" }
-  ];
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({
+    activeOrders: 0,
+    todayRevenue: 0,
+    avgDeliveryTime: 23,
+    successRate: 98.5
+  });
+  const [recentOrders, setRecentOrders] = useState<any[]>([]);
 
   const drivers = [
     { name: "Mike Johnson", status: "active", orders: 3, rating: 4.9, location: "Downtown", eta: "12 min" },
@@ -34,6 +36,74 @@ const BusinessDashboard = () => {
     { name: "Tom Anderson", status: "active", orders: 4, rating: 4.7, location: "East District", eta: "15 min" },
     { name: "Anna Lee", status: "break", orders: 0, rating: 4.9, location: "South Area", eta: "On break" }
   ];
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    setLoading(true);
+    try {
+      // Load recent orders
+      const ordersQuery = query(
+        collection(db, 'orders'),
+        orderBy('createdAt', 'desc'),
+        limit(10)
+      );
+      
+      const ordersSnapshot = await getDocs(ordersQuery);
+      const ordersData = ordersSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      setRecentOrders(ordersData);
+
+      // Calculate stats from real data
+      const activeOrdersQuery = query(
+        collection(db, 'orders'),
+        where('status', 'in', ['placed', 'preparing', 'in-transit'])
+      );
+      
+      const activeOrdersSnapshot = await getDocs(activeOrdersQuery);
+      const activeOrdersCount = activeOrdersSnapshot.size;
+
+      // Calculate today's orders
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const todayOrdersQuery = query(
+        collection(db, 'orders'),
+        where('createdAt', '>=', today)
+      );
+      
+      const todayOrdersSnapshot = await getDocs(todayOrdersQuery);
+      const todayOrdersCount = todayOrdersSnapshot.size;
+
+      setStats({
+        activeOrders: activeOrdersCount,
+        todayRevenue: todayOrdersCount * 24.99, // Approximate revenue
+        avgDeliveryTime: 23,
+        successRate: 98.5
+      });
+
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatOrderData = (order: any) => {
+    return {
+      id: order.id || '#' + Math.random().toString(36).substr(2, 5),
+      customer: order.userName || 'Anonymous',
+      status: order.status || 'placed',
+      time: order.createdAt?.toDate?.()?.toLocaleTimeString() || 'Recently',
+      value: order.orderValue || '$24.99',
+      driver: order.driver || 'Unassigned'
+    };
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -53,6 +123,14 @@ const BusinessDashboard = () => {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Analytics Overview */}
@@ -62,16 +140,11 @@ const BusinessDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Today's Revenue</p>
-                <p className="text-2xl font-bold text-foreground">$4,234</p>
+                <p className="text-2xl font-bold text-foreground">${stats.todayRevenue.toFixed(2)}</p>
               </div>
               <div className="p-3 bg-success/10 rounded-lg">
                 <DollarSign className="h-5 w-5 text-success" />
               </div>
-            </div>
-            <div className="flex items-center mt-4">
-              <TrendingUp className="h-4 w-4 text-success mr-1" />
-              <span className="text-sm font-medium text-success">+12.5%</span>
-              <span className="text-sm text-muted-foreground ml-1">vs yesterday</span>
             </div>
           </CardContent>
         </Card>
@@ -81,15 +154,11 @@ const BusinessDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Active Orders</p>
-                <p className="text-2xl font-bold text-foreground">47</p>
+                <p className="text-2xl font-bold text-foreground">{stats.activeOrders}</p>
               </div>
               <div className="p-3 bg-primary/10 rounded-lg">
                 <Package className="h-5 w-5 text-primary" />
               </div>
-            </div>
-            <div className="mt-4">
-              <Progress value={75} className="h-2" />
-              <span className="text-sm text-muted-foreground">75% capacity</span>
             </div>
           </CardContent>
         </Card>
@@ -105,10 +174,6 @@ const BusinessDashboard = () => {
                 <Truck className="h-5 w-5 text-secondary" />
               </div>
             </div>
-            <div className="flex items-center mt-4">
-              <Users className="h-4 w-4 text-secondary mr-1" />
-              <span className="text-sm font-medium text-secondary">3 available</span>
-            </div>
           </CardContent>
         </Card>
 
@@ -117,15 +182,11 @@ const BusinessDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Avg. Delivery Time</p>
-                <p className="text-2xl font-bold text-foreground">23m</p>
+                <p className="text-2xl font-bold text-foreground">{stats.avgDeliveryTime}m</p>
               </div>
               <div className="p-3 bg-warning/10 rounded-lg">
                 <Clock className="h-5 w-5 text-warning" />
               </div>
-            </div>
-            <div className="flex items-center mt-4">
-              <span className="text-sm font-medium text-success">-2 min</span>
-              <span className="text-sm text-muted-foreground ml-1">improvement</span>
             </div>
           </CardContent>
         </Card>
@@ -153,35 +214,46 @@ const BusinessDashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {recentOrders.map((order, index) => (
-                  <div key={index} className="flex items-center justify-between p-4 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors">
-                    <div className="flex items-center gap-4">
-                      <Badge variant={getStatusColor(order.status)}>
-                        {order.status === "delivered" && <CheckCircle className="h-3 w-3 mr-1" />}
-                        {order.status === "in-transit" && <Truck className="h-3 w-3 mr-1" />}
-                        {order.status === "preparing" && <AlertCircle className="h-3 w-3 mr-1" />}
-                        {order.status}
-                      </Badge>
-                      <div>
-                        <p className="font-medium">{order.id}</p>
-                        <p className="text-sm text-muted-foreground">{order.customer}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-medium">{order.value}</p>
-                      <p className="text-sm text-muted-foreground">{order.time}</p>
-                    </div>
-                    <div className="text-right min-w-[100px]">
-                      <p className="text-sm font-medium">{order.driver}</p>
-                      {order.driver !== "Unassigned" && (
-                        <Button variant="ghost" size="sm" className="h-6 text-xs">
-                          <MapPin className="h-3 w-3 mr-1" />
-                          Track
-                        </Button>
-                      )}
-                    </div>
+                {recentOrders.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground">No orders yet</p>
+                    <p className="text-sm text-muted-foreground">Orders will appear here once customers start placing them</p>
                   </div>
-                ))}
+                ) : (
+                  recentOrders.map((order, index) => {
+                    const formattedOrder = formatOrderData(order);
+                    return (
+                      <div key={index} className="flex items-center justify-between p-4 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors">
+                        <div className="flex items-center gap-4">
+                          <Badge variant={getStatusColor(formattedOrder.status)}>
+                            {formattedOrder.status === "delivered" && <CheckCircle className="h-3 w-3 mr-1" />}
+                            {formattedOrder.status === "in-transit" && <Truck className="h-3 w-3 mr-1" />}
+                            {formattedOrder.status === "preparing" && <AlertCircle className="h-3 w-3 mr-1" />}
+                            {formattedOrder.status}
+                          </Badge>
+                          <div>
+                            <p className="font-medium">{formattedOrder.id}</p>
+                            <p className="text-sm text-muted-foreground">{formattedOrder.customer}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-medium">{formattedOrder.value}</p>
+                          <p className="text-sm text-muted-foreground">{formattedOrder.time}</p>
+                        </div>
+                        <div className="text-right min-w-[100px]">
+                          <p className="text-sm font-medium">{formattedOrder.driver}</p>
+                          {formattedOrder.driver !== "Unassigned" && (
+                            <Button variant="ghost" size="sm" className="h-6 text-xs">
+                              <MapPin className="h-3 w-3 mr-1" />
+                              Track
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </CardContent>
           </Card>
@@ -265,21 +337,21 @@ const BusinessDashboard = () => {
                 <div className="flex justify-between items-center p-4 bg-success/10 rounded-lg">
                   <div>
                     <p className="text-sm text-muted-foreground">Today's Revenue</p>
-                    <p className="text-2xl font-bold text-success">$4,234</p>
+                    <p className="text-2xl font-bold text-success">${stats.todayRevenue.toFixed(2)}</p>
                   </div>
                   <TrendingUp className="h-8 w-8 text-success" />
                 </div>
                 <div className="flex justify-between items-center p-4 bg-primary/10 rounded-lg">
                   <div>
-                    <p className="text-sm text-muted-foreground">Weekly Average</p>
-                    <p className="text-2xl font-bold text-primary">$3,890</p>
+                    <p className="text-sm text-muted-foreground">Active Orders</p>
+                    <p className="text-2xl font-bold text-primary">{stats.activeOrders}</p>
                   </div>
                   <BarChart3 className="h-8 w-8 text-primary" />
                 </div>
                 <div className="flex justify-between items-center p-4 bg-secondary/10 rounded-lg">
                   <div>
-                    <p className="text-sm text-muted-foreground">Monthly Growth</p>
-                    <p className="text-2xl font-bold text-secondary">+15.3%</p>
+                    <p className="text-sm text-muted-foreground">Success Rate</p>
+                    <p className="text-2xl font-bold text-secondary">{stats.successRate}%</p>
                   </div>
                   <TrendingUp className="h-8 w-8 text-secondary" />
                 </div>

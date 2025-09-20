@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,7 @@ import OrderTracking from "@/components/OrderTracking";
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState("overview");
+  const navigate = useNavigate();
 
   const features = [
     {
@@ -78,7 +80,7 @@ const Index = () => {
             <Button 
               variant="hero" 
               size="lg"
-              onClick={() => setActiveTab("customer")}
+              onClick={() => navigate('/auth')}
               className="text-lg px-8"
             >
               <Package className="h-5 w-5 mr-2" />
